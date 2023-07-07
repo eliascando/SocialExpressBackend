@@ -1,4 +1,6 @@
 const Follow = require('../models/follow.model');
+const paginate = require('mongoose-pagination');
+const { followUsersID } = require('../services/followUsersID');
 
 const saveFollow = async (req, res) => {
     //Obtener los datos de la petición
@@ -64,17 +66,27 @@ const following = async (req, res) => {
             var userId = req.user._id;
         }
         //Obtener la pagina si se pasa por parámetro
-        const page = req.params.page ? req.params.page : 1;
+        const page = req.params.page ? parseInt(req.params.page) : 1;
         const itemsPerPage = 5;
 
-        //Obtener los usuarios que sigue el usuario y la paginación
-        const following = await Follow.find({user: userId}, {populate: 'followed', page, limit: itemsPerPage});
+        //Obtener los usuarios que siguen al usuario y la paginación
+        const following = await Follow.find({user: userId}).populate('user followed', '-password -role -__v').paginate(page, itemsPerPage);
+        //Sacar los usuarios que siguen al usuario autenticado
+        
+        //Obtener el total de usuarios que siguen al usuario
+        const totalFollowing = await Follow.countDocuments({user: userId});
+
+        let user = await followUsersID(req.user._id);
 
         //Responder al cliente
         return res.status(200).json({
             status: 'ok',
             message: 'Follows obtained successfully',
-            following
+            page,
+            totalFollowing,
+            totalPages: Math.ceil(totalFollowing/itemsPerPage),
+            user,
+            following,
         });
     }catch(error){
         return res.status(500).json({
@@ -94,19 +106,23 @@ const followers = async (req, res) => {
         }
 
         //Obtener la pagina si se pasa por parámetro
-        const page = req.params.page ? req.params.page : 1;
+        const page = req.params.page ? parseInt(req.params.page) : 1;
         const itemsPerPage = 5;
 
         //Obtener los usuarios que siguen al usuario y la paginación
-        const followers = await Follow.find({user: userId}, {populate: 'followers', page, limit: itemsPerPage});
+        const followers = await Follow.find({followed: userId}).populate('user followed', '-password -role -__v').paginate(page, itemsPerPage);
         //Sacar los usuarios que siguen al usuario autenticado
         
+        //Obtener el total de usuarios que siguen al usuario
+        const totalFollowers = await Follow.countDocuments({followed: userId});
 
         //Responder al cliente
         return res.status(200).json({
             status: 'ok',
             message: 'Followers obtained successfully',
-            userId,
+            page,
+            totalFollowers,
+            totalPages: Math.ceil(totalFollowers/itemsPerPage),
             followers
         });
     }catch(error){

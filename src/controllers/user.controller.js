@@ -1,8 +1,12 @@
 const User = require('../models/user.model');
+const Follow = require('../models/follow.model');
+const Post = require('../models/post.model');
 const bcrypt = require('bcrypt');
 const { createToken } = require('../services/jwt');
+const paginate = require('mongoose-pagination');
 const fs = require('fs');
 const path = require('path');
+const { followThisUser, followUsersID }= require('../services/followUsersID');
 
 const register = async (req, res) => {
     //Obtener los datos de la petición
@@ -118,12 +122,16 @@ const profile = async (req, res) => {
         });
     }
 
+    //Incluir la información de follows y followers
+    const followInfo = await followThisUser(req.user._id, id);
+
     //Responder al cliente
-    //TODO: devolver la informacion de follows y followers
     return res.status(200).json({
         status: 'ok',
         message: 'User profile',
-        user
+        user,
+        following: followInfo.following,
+        follower: followInfo.follower
     });
 }
 
@@ -138,7 +146,7 @@ const list = async (req, res) => {
 
     try{
         //Buscar los usuarios en la base de datos
-        let users = await User.find().select({password: 0, __v: 0, role: 0}).sort('_id').paginate(page, itemsPerPage);
+        let users = await User.find().select({password: 0, __v: 0, role: 0, email: 0}).sort('_id').paginate(page, itemsPerPage);
 
         if(!users){
             return res.status(404).json({
@@ -150,6 +158,8 @@ const list = async (req, res) => {
         //Obtener el total de usuarios
         let totalUsers = await User.countDocuments();
 
+        let followUsers = await followUsersID(req.user._id);
+
         //Responder al cliente
         return res.status(200).json({
             status: 'ok',
@@ -157,7 +167,9 @@ const list = async (req, res) => {
             itemsPerPage,
             totalUsers,
             totalPages: Math.ceil(totalUsers/itemsPerPage),
-            users
+            users,
+            users_following: followUsers.following,
+            users_follow_me: followUsers.follower
         });
     }catch{
         return res.status(500).json({
@@ -194,7 +206,7 @@ const update = async (req, res) => {
         }
     
         //Actualizar los datos del usuario en la base de datos
-        let userUpdated = await User.findByIdAndUpdate({_id: params._id}, userUpdate, {new: true})//.select({password: 0, __v: 0, role: 0});
+        let userUpdated = await User.findByIdAndUpdate({_id: params._id}, userUpdate, {new: true});
     
         if(!userUpdated){
             return res.status(400).json({
@@ -301,6 +313,42 @@ const getAvatar = async (req, res) => {
     }
 }
 
+//funcion para obtener las estadisticas del usuario que se pasa por parametro
+//seguidores, seguidos y publicaciones
+const counters = async (req, res) => {
+    let userId = null;
+    if(req.params.id){
+        userId = req.params.id;
+    }else{
+        userId = req.user._id;
+    }
+
+    try{
+        //Obtener el total de seguidores
+        let following = await Follow.countDocuments({user: userId});
+
+        //Obtener el total de seguidos
+        let followers = await Follow.countDocuments({followed: userId});
+
+        //Obtener el total de publicaciones
+        let posts = await Post.countDocuments({user: userId});
+
+        //Responder al cliente
+        return res.status(200).json({
+            status: 'ok',
+            id: userId,
+            following,
+            followers,
+            posts
+        });
+    }catch(error){
+        return res.status(500).json({
+            status: 'error',
+            message: 'An error occurred while getting the counters'
+        });
+    }
+}
+
 module.exports ={
     register,
     login,
@@ -308,5 +356,6 @@ module.exports ={
     list,
     update,
     uploadAvatar,
-    getAvatar
+    getAvatar,
+    counters
 }
